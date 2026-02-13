@@ -197,8 +197,9 @@ if st.button("🚀 Scan Sekarang"):
                 "Signal": signal
             })
 
-        except:
-            continue
+except Exception as e:
+    print(f"Error di {ticker}: {e}")
+    continue
 
         progress.progress((i + 1) / len(LQ45))
 
