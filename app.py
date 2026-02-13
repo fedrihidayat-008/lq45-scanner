@@ -202,12 +202,15 @@ if st.button("🚀 Scan Sekarang"):
 
         progress.progress((i + 1) / len(LQ45))
 
-    df_result = pd.DataFrame(results)
+df_result = pd.DataFrame(results)
+
+if not df_result.empty and "Final Score" in df_result.columns:
     df_result = df_result.sort_values(by="Final Score", ascending=False)
-
     st.dataframe(df_result, use_container_width=True)
-    st.success("Scan selesai!")
+else:
+    st.warning("Tidak ada data yang berhasil diproses.")
 
+st.success("Scan selesai!")
 # =====================================
 # FOOTER
 # =====================================
