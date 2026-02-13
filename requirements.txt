@@ -2,3 +2,6 @@ streamlit
 yfinance
 pandas
 numpy
+feedparser
+transformers
+torch
