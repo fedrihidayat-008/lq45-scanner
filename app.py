@@ -1,134 +1,84 @@
 import streamlit as st
-import yfinance as yf
 import pandas as pd
-import numpy as np
-import feedparser
+import yfinance as yf
 
-# =====================================
-# PAGE CONFIG
-# =====================================
-st.set_page_config(page_title="LQ45 Scanner", layout="wide")
+st.set_page_config(layout="wide")
+
 st.title("📈 LQ45 Technical + Fractal + News Scanner")
 
-# =====================================
-# LQ45 LIST
-# =====================================
+# =============================
+# SETTINGS
+# =============================
+
+mode_agresif = st.sidebar.toggle("Mode Agresif 🔥")
+
+bobot_teknikal = st.sidebar.slider(
+    "Bobot Teknikal",
+    0.0, 1.0, 0.7
+)
+
+bobot_sentimen = 1 - bobot_teknikal
+st.sidebar.write(f"Bobot Sentimen: {bobot_sentimen:.2f}")
+
+# =============================
+# LIST SAHAM
+# =============================
+
 LQ45 = [
-    "BBCA.JK","BBRI.JK","BMRI.JK","TLKM.JK","ASII.JK",
-    "ADRO.JK","ICBP.JK","UNTR.JK","MDKA.JK","ANTM.JK"
+    "BBCA.JK","BBRI.JK","BMRI.JK",
+    "ASII.JK","TLKM.JK","ICBP.JK"
 ]
 
-# =====================================
-# RSI FUNCTION
-# =====================================
-def calculate_rsi(data, period=14):
-    delta = data["Close"].diff()
-    gain = delta.clip(lower=0)
-    loss = -1 * delta.clip(upper=0)
+# =============================
+# FUNCTION SCAN
+# =============================
 
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean()
+def run_scan():
+    results = []
 
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
+    for ticker in LQ45:
+        try:
+            data = yf.download(ticker, period="3mo", progress=False)
 
-    return rsi
+            if data.empty:
+                continue
 
-# =====================================
-# TECHNICAL SCORE
-# =====================================
-def calculate_technical_score(df, aggressive=False):
-    score = 0
+            close = data["Close"]
 
-    df["EMA20"] = df["Close"].ewm(span=20).mean()
-    df["EMA50"] = df["Close"].ewm(span=50).mean()
+            ma20 = close.rolling(20).mean().iloc[-1]
+            last = close.iloc[-1]
 
-    if df["EMA20"].iloc[-1] > df["EMA50"].iloc[-1]:
-        score += 1
+            score_teknikal = 1 if last > ma20 else 0
 
-    df["RSI"] = calculate_rsi(df)
+            score_sentimen = 0.5  # dummy dulu
 
-    if aggressive:
-        if df["RSI"].iloc[-1] < 60:
-            score += 1
-    else:
-        if df["RSI"].iloc[-1] < 50:
-            score += 1
+            final_score = (
+                bobot_teknikal * score_teknikal +
+                bobot_sentimen * score_sentimen
+            )
 
-    return score
+            results.append({
+                "Ticker": ticker,
+                "Harga": round(float(last),2),
+                "Score": round(final_score,2)
+            })
 
-# =====================================
-# FRACTAL SUPPORT & RESISTANCE
-# =====================================
-def detect_fractal_levels(df):
-    highs = df["High"].values
-    lows = df["Low"].values
+        except Exception as e:
+            st.error(f"Error {ticker}: {e}")
 
-    swing_highs = []
-    swing_lows = []
+    return pd.DataFrame(results)
 
-    for i in range(2, len(df)-2):
-        if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
-            swing_highs.append(highs[i])
+# =============================
+# BUTTON
+# =============================
 
-        if lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i+1] and lows[i] < lows[i+2]:
-            swing_lows.append(lows[i])
-
-    resistance = swing_highs[-1] if swing_highs else df["High"].max()
-    support = swing_lows[-1] if swing_lows else df["Low"].min()
-
-    return support, resistance
-
-# =====================================
-# LIGHTWEIGHT NEWS SENTIMENT (Keyword Based)
-# =====================================
-def get_news_sentiment(keyword):
-    try:
-        url = f"https://news.google.com/rss/search?q={keyword}+saham+Indonesia&hl=id&gl=ID&ceid=ID:id"
-        feed = feedparser.parse(url)
-
-        positive_keywords = ["laba", "untung", "naik", "ekspansi", "dividen", "akuisisi"]
-        negative_keywords = ["rugi", "turun", "gugatan", "utang", "investigasi"]
-
-        score = 0
-
-        for entry in feed.entries[:5]:
-            title = entry.title.lower()
-
-            for word in positive_keywords:
-                if word in title:
-                    score += 1
-
-            for word in negative_keywords:
-                if word in title:
-                    score -= 1
-
-        if score > 0:
-            return "POSITIVE"
-        elif score < 0:
-            return "NEGATIVE"
-        else:
-            return "NEUTRAL"
-
-    except:
-        return "NEUTRAL"
-
-# =====================================
-# SIDEBAR
-# =====================================
-st.sidebar.header("⚙️ Settings")
-
-aggressive_mode = st.sidebar.toggle("Mode Agresif 🔥", value=False)
-
-technical_weight = st.sidebar.slider("Bobot Teknikal", 0.0, 1.0, 0.7)
-sentiment_weight = 1 - technical_weight
-
-st.sidebar.write(f"Bobot Sentimen: {sentiment_weight:.2f}")
-
-# =====================================
-# SCANNER
-# =====================================
 if st.button("🚀 Scan Sekarang"):
 
-    results = []
-    progress = st.progress(0)
+    with st.spinner("Scanning saham..."):
+        df = run_scan()
+
+    if df.empty:
+        st.warning("Tidak ada data ditemukan.")
+    else:
+        st.success("Scan selesai!")
+        st.dataframe(df.sort_values("Score", ascending=False))
