@@ -1,3 +1,31 @@
+import feedparser
+from transformers import pipeline
+
+@st.cache_resource
+def load_sentiment_model():
+    return pipeline("sentiment-analysis")
+
+sentiment_model = load_sentiment_model()
+
+def get_news_sentiment(keyword):
+    url = f"https://news.google.com/rss/search?q={keyword}+saham+Indonesia&hl=id&gl=ID&ceid=ID:id"
+    feed = feedparser.parse(url)
+
+    scores = []
+    for entry in feed.entries[:5]:
+        result = sentiment_model(entry.title)[0]
+        scores.append(result["label"])
+
+    positive = scores.count("POSITIVE")
+    negative = scores.count("NEGATIVE")
+
+    if positive > negative:
+        return "POSITIVE"
+    elif negative > positive:
+        return "NEGATIVE"
+    else:
+        return "NEUTRAL"
+
 import streamlit as st
 import yfinance as yf
 import pandas as pd
