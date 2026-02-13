@@ -5,42 +5,48 @@ import numpy as np
 import feedparser
 from transformers import pipeline
 
-# ===============================
-# CONFIG
-# ===============================
+# =====================================
+# PAGE CONFIG
+# =====================================
 st.set_page_config(page_title="LQ45 AI Scanner", layout="wide")
-st.title("📈 LQ45 AI Technical + News Sentiment Scanner")
+st.title("📈 LQ45 AI Technical + Fractal + News Sentiment Scanner")
 
-# ===============================
+# =====================================
 # LOAD AI MODEL (cached)
-# ===============================
+# =====================================
 @st.cache_resource
 def load_sentiment_model():
     return pipeline("sentiment-analysis")
 
 sentiment_model = load_sentiment_model()
 
-# ===============================
-# LQ45 LIST (bisa update manual)
-# ===============================
+# =====================================
+# LQ45 LIST
+# =====================================
 LQ45 = [
     "BBCA.JK","BBRI.JK","BMRI.JK","TLKM.JK","ASII.JK",
     "ADRO.JK","ICBP.JK","UNTR.JK","MDKA.JK","ANTM.JK"
 ]
 
-# ===============================
-# TECHNICAL FUNCTIONS
-# ===============================
+# =====================================
+# RSI FUNCTION
+# =====================================
 def calculate_rsi(data, period=14):
     delta = data["Close"].diff()
     gain = delta.clip(lower=0)
     loss = -1 * delta.clip(upper=0)
+
     avg_gain = gain.rolling(period).mean()
     avg_loss = loss.rolling(period).mean()
+
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
+
     return rsi
 
+# =====================================
+# TECHNICAL SCORE
+# =====================================
 def calculate_technical_score(df, aggressive=False):
     score = 0
 
@@ -63,33 +69,59 @@ def calculate_technical_score(df, aggressive=False):
 
     return score
 
-# ===============================
+# =====================================
+# FRACTAL SUPPORT & RESISTANCE
+# =====================================
+def detect_fractal_levels(df):
+    highs = df["High"].values
+    lows = df["Low"].values
+
+    swing_highs = []
+    swing_lows = []
+
+    for i in range(2, len(df)-2):
+        if highs[i] > highs[i-1] and highs[i] > highs[i-2] and highs[i] > highs[i+1] and highs[i] > highs[i+2]:
+            swing_highs.append(highs[i])
+
+        if lows[i] < lows[i-1] and lows[i] < lows[i-2] and lows[i] < lows[i+1] and lows[i] < lows[i+2]:
+            swing_lows.append(lows[i])
+
+    resistance = swing_highs[-1] if swing_highs else df["High"].max()
+    support = swing_lows[-1] if swing_lows else df["Low"].min()
+
+    return support, resistance
+
+# =====================================
 # NEWS SENTIMENT
-# ===============================
+# =====================================
 def get_news_sentiment(keyword):
-    url = f"https://news.google.com/rss/search?q={keyword}+saham+Indonesia&hl=id&gl=ID&ceid=ID:id"
-    feed = feedparser.parse(url)
+    try:
+        url = f"https://news.google.com/rss/search?q={keyword}+saham+Indonesia&hl=id&gl=ID&ceid=ID:id"
+        feed = feedparser.parse(url)
 
-    scores = []
+        scores = []
 
-    for entry in feed.entries[:5]:
-        result = sentiment_model(entry.title)[0]
-        scores.append(result["label"])
+        for entry in feed.entries[:5]:
+            result = sentiment_model(entry.title)[0]
+            scores.append(result["label"])
 
-    positive = scores.count("POSITIVE")
-    negative = scores.count("NEGATIVE")
+        positive = scores.count("POSITIVE")
+        negative = scores.count("NEGATIVE")
 
-    if positive > negative:
-        return "POSITIVE"
-    elif negative > positive:
-        return "NEGATIVE"
-    else:
+        if positive > negative:
+            return "POSITIVE"
+        elif negative > positive:
+            return "NEGATIVE"
+        else:
+            return "NEUTRAL"
+    except:
         return "NEUTRAL"
 
-# ===============================
+# =====================================
 # SIDEBAR
-# ===============================
+# =====================================
 st.sidebar.header("⚙️ Settings")
+
 aggressive_mode = st.sidebar.toggle("Mode Agresif 🔥", value=False)
 
 technical_weight = st.sidebar.slider("Bobot Teknikal", 0.0, 1.0, 0.7)
@@ -97,13 +129,12 @@ sentiment_weight = 1 - technical_weight
 
 st.sidebar.write(f"Bobot Sentimen: {sentiment_weight:.2f}")
 
-# ===============================
-# MAIN SCAN
-# ===============================
+# =====================================
+# SCANNER BUTTON
+# =====================================
 if st.button("🚀 Scan Sekarang"):
 
     results = []
-
     progress = st.progress(0)
 
     for i, ticker in enumerate(LQ45):
@@ -116,6 +147,23 @@ if st.button("🚀 Scan Sekarang"):
 
             technical_score = calculate_technical_score(df, aggressive_mode)
 
+            # FRACTAL LEVELS
+            support, resistance = detect_fractal_levels(df)
+
+            current_price = df["Close"].iloc[-1]
+
+            dist_sup = (current_price - support) / current_price
+            dist_res = (resistance - current_price) / current_price
+
+            # Bonus dekat support
+            if dist_sup < 0.02:
+                technical_score += 1
+
+            # Penalti dekat resistance
+            if dist_res < 0.02:
+                technical_score -= 1
+
+            # NEWS
             sentiment = get_news_sentiment(ticker.replace(".JK", ""))
 
             if sentiment == "POSITIVE":
@@ -125,19 +173,24 @@ if st.button("🚀 Scan Sekarang"):
             else:
                 sentiment_score = 0
 
+            # FINAL SCORE
             final_score = (technical_score * technical_weight) + (sentiment_score * sentiment_weight)
 
-            if final_score >= 1:
+            # SIGNAL CLASSIFICATION
+            if final_score >= 1.5:
                 signal = "🔥 STRONG BUY"
-            elif final_score > 0:
+            elif final_score >= 1:
                 signal = "🟢 BUY"
-            elif final_score == 0:
+            elif final_score >= 0:
                 signal = "⚖️ HOLD"
             else:
                 signal = "🔴 AVOID"
 
             results.append({
                 "Ticker": ticker,
+                "Price": round(current_price, 2),
+                "Support": round(support, 2),
+                "Resistance": round(resistance, 2),
                 "Technical Score": technical_score,
                 "Sentiment": sentiment,
                 "Final Score": round(final_score, 2),
@@ -153,11 +206,10 @@ if st.button("🚀 Scan Sekarang"):
     df_result = df_result.sort_values(by="Final Score", ascending=False)
 
     st.dataframe(df_result, use_container_width=True)
-
     st.success("Scan selesai!")
 
-# ===============================
+# =====================================
 # FOOTER
-# ===============================
+# =====================================
 st.markdown("---")
-st.caption("AI Powered LQ45 Scanner | Technical + News Sentiment")
+st.caption("AI Powered LQ45 Scanner | EMA + RSI + Fractal + News Sentiment")
