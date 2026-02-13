@@ -1,17 +1,77 @@
+import streamlit as st
+import yfinance as yf
+import pandas as pd
+import numpy as np
 import feedparser
 from transformers import pipeline
 
+# ===============================
+# CONFIG
+# ===============================
+st.set_page_config(page_title="LQ45 AI Scanner", layout="wide")
+st.title("📈 LQ45 AI Technical + News Sentiment Scanner")
+
+# ===============================
+# LOAD AI MODEL (cached)
+# ===============================
 @st.cache_resource
 def load_sentiment_model():
     return pipeline("sentiment-analysis")
 
 sentiment_model = load_sentiment_model()
 
+# ===============================
+# LQ45 LIST (bisa update manual)
+# ===============================
+LQ45 = [
+    "BBCA.JK","BBRI.JK","BMRI.JK","TLKM.JK","ASII.JK",
+    "ADRO.JK","ICBP.JK","UNTR.JK","MDKA.JK","ANTM.JK"
+]
+
+# ===============================
+# TECHNICAL FUNCTIONS
+# ===============================
+def calculate_rsi(data, period=14):
+    delta = data["Close"].diff()
+    gain = delta.clip(lower=0)
+    loss = -1 * delta.clip(upper=0)
+    avg_gain = gain.rolling(period).mean()
+    avg_loss = loss.rolling(period).mean()
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+def calculate_technical_score(df, aggressive=False):
+    score = 0
+
+    # EMA
+    df["EMA20"] = df["Close"].ewm(span=20).mean()
+    df["EMA50"] = df["Close"].ewm(span=50).mean()
+
+    if df["EMA20"].iloc[-1] > df["EMA50"].iloc[-1]:
+        score += 1
+
+    # RSI
+    df["RSI"] = calculate_rsi(df)
+
+    if aggressive:
+        if df["RSI"].iloc[-1] < 60:
+            score += 1
+    else:
+        if df["RSI"].iloc[-1] < 50:
+            score += 1
+
+    return score
+
+# ===============================
+# NEWS SENTIMENT
+# ===============================
 def get_news_sentiment(keyword):
     url = f"https://news.google.com/rss/search?q={keyword}+saham+Indonesia&hl=id&gl=ID&ceid=ID:id"
     feed = feedparser.parse(url)
 
     scores = []
+
     for entry in feed.entries[:5]:
         result = sentiment_model(entry.title)[0]
         scores.append(result["label"])
@@ -26,97 +86,78 @@ def get_news_sentiment(keyword):
     else:
         return "NEUTRAL"
 
-import streamlit as st
-import yfinance as yf
-import pandas as pd
-import numpy as np
+# ===============================
+# SIDEBAR
+# ===============================
+st.sidebar.header("⚙️ Settings")
+aggressive_mode = st.sidebar.toggle("Mode Agresif 🔥", value=False)
 
-st.set_page_config(page_title="LQ45 Golden Momentum", layout="wide")
-st.title("🔥 LQ45 Golden Momentum Screener")
+technical_weight = st.sidebar.slider("Bobot Teknikal", 0.0, 1.0, 0.7)
+sentiment_weight = 1 - technical_weight
 
-lq45 = [
-"BBRI.JK","BMRI.JK","BBCA.JK","TLKM.JK","ASII.JK",
-"ADRO.JK","ANTM.JK","INCO.JK","MDKA.JK","PGAS.JK",
-"CPIN.JK","ICBP.JK","UNTR.JK","ITMG.JK","GOTO.JK"
-]
+st.sidebar.write(f"Bobot Sentimen: {sentiment_weight:.2f}")
 
-# ===== FUNCTIONS =====
-
-def EMA(series, window):
-    return series.ewm(span=window, adjust=False).mean()
-
-def RSI(series, period=14):
-    delta = series.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
-    avg_gain = gain.rolling(period).mean()
-    avg_loss = loss.rolling(period).mean()
-    rs = avg_gain / avg_loss
-    return 100 - (100 / (1 + rs))
-
-# ===== BUTTON =====
-
-if st.button("🚀 Scan Now"):
+# ===============================
+# MAIN SCAN
+# ===============================
+if st.button("🚀 Scan Sekarang"):
 
     results = []
+
     progress = st.progress(0)
 
-    for i, ticker in enumerate(lq45):
+    for i, ticker in enumerate(LQ45):
 
-        df = yf.download(ticker, period="1y", progress=False)
+        try:
+            df = yf.download(ticker, period="3mo", interval="1d", progress=False)
 
-        if df.empty:
+            if df.empty:
+                continue
+
+            technical_score = calculate_technical_score(df, aggressive_mode)
+
+            sentiment = get_news_sentiment(ticker.replace(".JK", ""))
+
+            if sentiment == "POSITIVE":
+                sentiment_score = 1
+            elif sentiment == "NEGATIVE":
+                sentiment_score = -1
+            else:
+                sentiment_score = 0
+
+            final_score = (technical_score * technical_weight) + (sentiment_score * sentiment_weight)
+
+            if final_score >= 1:
+                signal = "🔥 STRONG BUY"
+            elif final_score > 0:
+                signal = "🟢 BUY"
+            elif final_score == 0:
+                signal = "⚖️ HOLD"
+            else:
+                signal = "🔴 AVOID"
+
+            results.append({
+                "Ticker": ticker,
+                "Technical Score": technical_score,
+                "Sentiment": sentiment,
+                "Final Score": round(final_score, 2),
+                "Signal": signal
+            })
+
+        except:
             continue
 
-        # FIX MultiIndex column issue
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
+        progress.progress((i + 1) / len(LQ45))
 
-        df["EMA50"] = EMA(df["Close"], 50)
-        df["EMA200"] = EMA(df["Close"], 200)
-        df["RSI"] = RSI(df["Close"])
+    df_result = pd.DataFrame(results)
+    df_result = df_result.sort_values(by="Final Score", ascending=False)
 
-        latest = df.iloc[-1]
-        score = 0
-
-        # Golden Cross
-        if latest["EMA50"] > latest["EMA200"]:
-            score += 25
-
-        # Price above EMA50
-        if latest["Close"] > latest["EMA50"]:
-            score += 15
-
-        # Breakout 20 hari
-        if latest["Close"] >= df["High"].rolling(20).max().iloc[-1]:
-            score += 20
-
-        # Volume spike
-        if latest["Volume"] > df["Volume"].rolling(20).mean().iloc[-1] * 1.5:
-            score += 15
-
-        # RSI sehat
-        if 55 < latest["RSI"] < 70:
-            score += 10
-
-        if score >= 85:
-            signal = "🔥 Strong Buy"
-        elif score >= 75:
-            signal = "🟢 Buy"
-        elif score >= 65:
-            signal = "🟡 Watchlist"
-        else:
-            signal = "❌ No Trade"
-
-        results.append([ticker, score, signal])
-
-        progress.progress((i + 1) / len(lq45))
-
-    df_result = pd.DataFrame(results, columns=["Ticker","Score","Signal"])
-    df_result = df_result.sort_values(by="Score", ascending=False)
-
-    st.success("Scan selesai!")
     st.dataframe(df_result, use_container_width=True)
 
-else:
-    st.info("Klik tombol 'Scan Now' untuk mulai scanning.")
+    st.success("Scan selesai!")
+
+# ===============================
+# FOOTER
+# ===============================
+st.markdown("---")
+st.caption("AI Powered LQ45 Scanner | Technical + News Sentiment")
