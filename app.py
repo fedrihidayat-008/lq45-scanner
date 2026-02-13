@@ -84,12 +84,11 @@ if st.button("🚀 Scan Now"):
 
         progress.progress((i + 1) / len(lq45))
 
-df_result = pd.DataFrame(results, columns=["Ticker","Score","Signal"])
-df_result = df_result.sort_values(by="Score", ascending=False)
+    df_result = pd.DataFrame(results, columns=["Ticker","Score","Signal"])
+    df_result = df_result.sort_values(by="Score", ascending=False)
 
-# Filter minimum score
-min_score = st.slider("Minimum Score Filter", 0, 100, 0)
-df_filtered = df_result[df_result["Score"] >= min_score]
+    st.success("Scan selesai!")
+    st.dataframe(df_result, use_container_width=True)
 
-st.success("Scan selesai!")
-st.dataframe(df_filtered, use_container_width=True)
+else:
+    st.info("Klik tombol 'Scan Now' untuk mulai scanning.")
