@@ -93,7 +93,3 @@ df_filtered = df_result[df_result["Score"] >= min_score]
 
 st.success("Scan selesai!")
 st.dataframe(df_filtered, use_container_width=True)
-
-
-else:
-    st.info("Klik tombol 'Scan Now' untuk mulai scanning.")
