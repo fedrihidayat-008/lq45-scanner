@@ -23,44 +23,40 @@ if st.button("🚀 Scan Now"):
     progress = st.progress(0)
     total = len(lq45)
 
-    for i, ticker in enumerate(lq45):
-        try:
-            df = yf.download(ticker, period="1y", progress=False)
+for i, ticker in enumerate(lq45):
+    try:
+        df = yf.download(ticker, period="1y", progress=False)
 
-            df["EMA50"] = ta.trend.ema_indicator(df["Close"], window=50)
-            df["EMA200"] = ta.trend.ema_indicator(df["Close"], window=200)
-            df["RSI"] = ta.momentum.rsi(df["Close"], window=14)
-            df["MACD"] = ta.trend.macd_diff(df["Close"])
+        if df.empty:
+            st.write(f"{ticker} -> Data kosong")
+            continue
 
-            latest = df.iloc[-1]
-            score = 0
+        df["EMA50"] = ta.trend.ema_indicator(df["Close"], window=50)
+        df["EMA200"] = ta.trend.ema_indicator(df["Close"], window=200)
+        df["RSI"] = ta.momentum.rsi(df["Close"], window=14)
+        df["MACD"] = ta.trend.macd_diff(df["Close"])
 
-            if latest["EMA50"] > latest["EMA200"]:
-                score += 25
-            if latest["Close"] > latest["EMA50"]:
-                score += 15
-            if latest["Close"] >= df["High"].rolling(20).max().iloc[-1]:
-                score += 20
-            if latest["Volume"] > df["Volume"].rolling(20).mean().iloc[-1] * 1.5:
-                score += 15
-            if 55 < latest["RSI"] < 70:
-                score += 10
-            if latest["MACD"] > 0:
-                score += 10
+        latest = df.iloc[-1]
 
-            if score >= 85:
-                signal = "🔥 Strong Buy"
-            elif score >= 75:
-                signal = "🟢 Buy"
-            elif score >= 65:
-                signal = "🟡 Watchlist"
-            else:
-                signal = "❌ No Trade"
+        score = 0
 
-            results.append([ticker, score, signal])
+        if latest["EMA50"] > latest["EMA200"]:
+            score += 25
+        if latest["Close"] > latest["EMA50"]:
+            score += 15
+        if latest["Close"] >= df["High"].rolling(20).max().iloc[-1]:
+            score += 20
+        if latest["Volume"] > df["Volume"].rolling(20).mean().iloc[-1] * 1.5:
+            score += 15
+        if 55 < latest["RSI"] < 70:
+            score += 10
+        if latest["MACD"] > 0:
+            score += 10
 
-        except:
-            pass
+        results.append([ticker, score])
+
+    except Exception as e:
+        st.write(f"{ticker} ERROR: {e}")
 
         progress.progress((i + 1) / total)
 
