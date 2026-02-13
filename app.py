@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import yfinance as yf
 import numpy as np
+import feedparser np
 
 st.set_page_config(layout="wide")
 
