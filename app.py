@@ -45,12 +45,15 @@ def run_scan():
 
             close = data["Close"]
 
+            # ambil nilai terakhir saja
+            last_price = close.iloc[-1]
             ma20 = close.rolling(20).mean().iloc[-1]
-            last = close.iloc[-1]
 
-            score_teknikal = 1 if last > ma20 else 0
+            # === FIX DI SINI ===
+            score_teknikal = 1 if last_price > ma20 else 0
 
-            score_sentimen = 0.5  # dummy dulu
+            # dummy sentiment dulu
+            score_sentimen = 0.5
 
             final_score = (
                 bobot_teknikal * score_teknikal +
@@ -59,7 +62,8 @@ def run_scan():
 
             results.append({
                 "Ticker": ticker,
-                "Harga": round(float(last),2),
+                "Harga": round(float(last_price),2),
+                "MA20": round(float(ma20),2),
                 "Score": round(final_score,2)
             })
 
