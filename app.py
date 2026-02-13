@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import yfinance as yf
+import numpy as np
 
 st.set_page_config(layout="wide")
 
@@ -30,6 +31,22 @@ LQ45 = [
 ]
 
 # =============================
+# FUNCTION RSI
+# =============================
+
+def calculate_rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    avg_gain = gain.rolling(period).mean()
+    avg_loss = loss.rolling(period).mean()
+
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+    return rsi
+
+# =============================
 # FUNCTION SCAN
 # =============================
 
@@ -40,49 +57,36 @@ def run_scan():
         try:
             data = yf.download(ticker, period="3mo", progress=False)
 
-            if data.empty:
+            if data.empty or len(data) < 30:
                 continue
 
             close = data["Close"]
 
-            # ambil nilai terakhir saja
-            last_price = close.iloc[-1]
-            ma20 = close.rolling(20).mean().iloc[-1]
+            last_price = float(close.iloc[-1])
+            ma20 = float(close.rolling(20).mean().iloc[-1])
 
-            # === FIX DI SINI ===
-            score_teknikal = 1 if last_price > ma20 else 0
+            # RSI
+            rsi_series = calculate_rsi(close)
+            rsi = float(rsi_series.iloc[-1])
 
-            # dummy sentiment dulu
-            score_sentimen = 0.5
+            # =============================
+            # SCORING LOGIC (NO SERIES HERE)
+            # =============================
 
-            final_score = (
-                bobot_teknikal * score_teknikal +
-                bobot_sentimen * score_sentimen
-            )
+            score = 0
 
-            results.append({
-                "Ticker": ticker,
-                "Harga": round(float(last_price),2),
-                "MA20": round(float(ma20),2),
-                "Score": round(final_score,2)
-            })
+            # MA condition
+            if last_price > ma20:
+                score += 1
 
-        except Exception as e:
-            st.error(f"Error {ticker}: {e}")
+            # RSI condition
+            if rsi > 50:
+                score += 1
 
-    return pd.DataFrame(results)
+            # Mode agresif
+            if mode_agresif:
+                if rsi > 45:
+                    score += 1
 
-# =============================
-# BUTTON
-# =============================
-
-if st.button("🚀 Scan Sekarang"):
-
-    with st.spinner("Scanning saham..."):
-        df = run_scan()
-
-    if df.empty:
-        st.warning("Tidak ada data ditemukan.")
-    else:
-        st.success("Scan selesai!")
-        st.dataframe(df.sort_values("Score", ascending=False))
+            # Normalisasi
+            score_teknikal = score /_
