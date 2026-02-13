@@ -5,26 +5,24 @@ import numpy as np
 
 st.set_page_config(layout="wide")
 
-st.title("📈 LQ45 Technical + Fractal + News Scanner")
+st.title("📈 LQ45 PRO Scanner | EMA + RSI + Breakout + Sentiment")
 
 # ======================================================
-# SIDEBAR SETTINGS
+# SIDEBAR
 # ======================================================
 
 mode_agresif = st.sidebar.toggle("Mode Agresif 🔥", value=False)
 
 bobot_teknikal = st.sidebar.slider(
     "Bobot Teknikal",
-    min_value=0.0,
-    max_value=1.0,
-    value=0.7
+    0.0, 1.0, 0.7
 )
 
 bobot_sentimen = 1 - bobot_teknikal
 st.sidebar.write(f"Bobot Sentimen: {bobot_sentimen:.2f}")
 
 # ======================================================
-# LIST SAHAM (Sample dulu biar ringan)
+# LIST SAHAM
 # ======================================================
 
 LQ45 = [
@@ -33,24 +31,21 @@ LQ45 = [
 ]
 
 # ======================================================
-# FUNCTION RSI
+# RSI FUNCTION
 # ======================================================
 
 def calculate_rsi(series, period=14):
     delta = series.diff()
     gain = delta.clip(lower=0)
     loss = -delta.clip(upper=0)
-
     avg_gain = gain.rolling(period).mean()
     avg_loss = loss.rolling(period).mean()
-
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
-
     return rsi
 
 # ======================================================
-# FUNCTION SCAN
+# SCAN FUNCTION
 # ======================================================
 
 def run_scan():
@@ -61,61 +56,90 @@ def run_scan():
         try:
             data = yf.download(
                 ticker,
-                period="2mo",
+                period="3mo",
                 interval="1d",
                 progress=False,
                 threads=False
             )
 
-            if data.empty:
-                st.warning(f"{ticker} tidak ada data.")
+            if data.empty or len(data) < 30:
                 continue
 
             close = data["Close"]
-
-            if len(close) < 25:
-                continue
+            volume = data["Volume"]
 
             last_price = float(close.iloc[-1])
+            prev_price = float(close.iloc[-2])
+
             ma20 = float(close.rolling(20).mean().iloc[-1])
+
+            ema9 = float(close.ewm(span=9).mean().iloc[-1])
+            ema21 = float(close.ewm(span=21).mean().iloc[-1])
 
             rsi_series = calculate_rsi(close)
             rsi = float(rsi_series.iloc[-1])
+            rsi_prev = float(rsi_series.iloc[-2])
+
+            high20 = float(close.rolling(20).max().iloc[-2])
+            avg_vol = float(volume.rolling(20).mean().iloc[-1])
+            last_vol = float(volume.iloc[-1])
 
             # ======================
             # SCORING
             # ======================
 
             score = 0
+            max_score = 7
 
-            # MA Trend
+            # Trend
+            if ema9 > ema21:
+                score += 1
+
             if last_price > ma20:
                 score += 1
 
-            # RSI Momentum
-            if rsi > 50:
+            # Momentum
+            if rsi > 55:
+                score += 1
+
+            if rsi > rsi_prev:
+                score += 1
+
+            # Breakout
+            if last_price > high20:
+                score += 1
+
+            if last_vol > avg_vol * 1.5:
+                score += 1
+
+            # Sentiment proxy (5-day return)
+            if (last_price / float(close.iloc[-5]) - 1) > 0:
                 score += 1
 
             # Mode Agresif
-            if mode_agresif and rsi > 45:
+            if mode_agresif and rsi > 50:
                 score += 1
+                max_score += 1
 
-            score_teknikal = score / 3
-
-            # Dummy Sentiment sementara
-            score_sentimen = 0.5
+            score_teknikal = score / max_score
+            score_sentimen = score_teknikal  # sementara sinkron
 
             final_score = (
                 bobot_teknikal * score_teknikal +
                 bobot_sentimen * score_sentimen
             )
 
+            signal = "BUY 🔥" if final_score > 0.6 else "WAIT"
+
             results.append({
                 "Ticker": ticker,
-                "Harga": round(last_price, 2),
-                "MA20": round(ma20, 2),
-                "RSI": round(rsi, 2),
-                "Score": round(final_score, 2)
+                "Harga": round(last_price,2),
+                "RSI": round(rsi,1),
+                "EMA9>21": ema9 > ema21,
+                "Breakout": last_price > high20,
+                "Volume Spike": last_vol > avg_vol * 1.5,
+                "Score": round(final_score,2),
+                "Signal": signal
             })
 
         except Exception as e:
@@ -124,12 +148,12 @@ def run_scan():
     return pd.DataFrame(results)
 
 # ======================================================
-# BUTTON SCAN
+# BUTTON
 # ======================================================
 
 if st.button("🚀 Scan Sekarang"):
 
-    with st.spinner("Scanning saham..."):
+    with st.spinner("Scanning PRO mode..."):
         df = run_scan()
 
     if df.empty:
@@ -141,9 +165,5 @@ if st.button("🚀 Scan Sekarang"):
             use_container_width=True
         )
 
-# ======================================================
-# FOOTER
-# ======================================================
-
 st.markdown("---")
-st.caption("LQ45 Scanner | EMA + RSI + Fractal + Lightweight News Sentiment")
+st.caption("PRO Scanner | EMA + RSI + Breakout + Volume + Sentiment Proxy")
