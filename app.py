@@ -139,69 +139,65 @@ if st.button("🚀 Scan Sekarang"):
 
     for i, ticker in enumerate(LQ45):
 
-        try:
-            df = yf.download(ticker, period="3mo", interval="1d", progress=False)
+    try:
+        df = yf.download(ticker, period="3mo", interval="1d", progress=False)
 
-            if df.empty:
-                continue
+        if df.empty:
+            continue
 
-            technical_score = calculate_technical_score(df, aggressive_mode)
+        technical_score = calculate_technical_score(df, aggressive_mode)
 
-            # FRACTAL LEVELS
-            support, resistance = detect_fractal_levels(df)
+        # FRACTAL
+        support, resistance = detect_fractal_levels(df)
 
-            current_price = df["Close"].iloc[-1]
+        current_price = df["Close"].iloc[-1]
 
-            dist_sup = (current_price - support) / current_price
-            dist_res = (resistance - current_price) / current_price
+        dist_sup = (current_price - support) / current_price
+        dist_res = (resistance - current_price) / current_price
 
-            # Bonus dekat support
-            if dist_sup < 0.02:
-                technical_score += 1
+        if dist_sup < 0.02:
+            technical_score += 1
 
-            # Penalti dekat resistance
-            if dist_res < 0.02:
-                technical_score -= 1
+        if dist_res < 0.02:
+            technical_score -= 1
 
-            # NEWS
-            sentiment = get_news_sentiment(ticker.replace(".JK", ""))
+        # SENTIMENT
+        sentiment = get_news_sentiment(ticker.replace(".JK", ""))
 
-            if sentiment == "POSITIVE":
-                sentiment_score = 1
-            elif sentiment == "NEGATIVE":
-                sentiment_score = -1
-            else:
-                sentiment_score = 0
+        if sentiment == "POSITIVE":
+            sentiment_score = 1
+        elif sentiment == "NEGATIVE":
+            sentiment_score = -1
+        else:
+            sentiment_score = 0
 
-            # FINAL SCORE
-            final_score = (technical_score * technical_weight) + (sentiment_score * sentiment_weight)
+        final_score = (technical_score * technical_weight) + (sentiment_score * sentiment_weight)
 
-            # SIGNAL CLASSIFICATION
-            if final_score >= 1.5:
-                signal = "🔥 STRONG BUY"
-            elif final_score >= 1:
-                signal = "🟢 BUY"
-            elif final_score >= 0:
-                signal = "⚖️ HOLD"
-            else:
-                signal = "🔴 AVOID"
+        if final_score >= 1.5:
+            signal = "🔥 STRONG BUY"
+        elif final_score >= 1:
+            signal = "🟢 BUY"
+        elif final_score >= 0:
+            signal = "⚖️ HOLD"
+        else:
+            signal = "🔴 AVOID"
 
-            results.append({
-                "Ticker": ticker,
-                "Price": round(current_price, 2),
-                "Support": round(support, 2),
-                "Resistance": round(resistance, 2),
-                "Technical Score": technical_score,
-                "Sentiment": sentiment,
-                "Final Score": round(final_score, 2),
-                "Signal": signal
-            })
+        results.append({
+            "Ticker": ticker,
+            "Price": round(current_price, 2),
+            "Support": round(support, 2),
+            "Resistance": round(resistance, 2),
+            "Technical Score": technical_score,
+            "Sentiment": sentiment,
+            "Final Score": round(final_score, 2),
+            "Signal": signal
+        })
 
-except Exception as e:
-    print(f"Error di {ticker}: {e}")
-    continue
+    except Exception as e:
+        print(f"Error di {ticker}: {e}")
+        continue
 
-        progress.progress((i + 1) / len(LQ45))
+    progress.progress((i + 1) / len(LQ45))
 
 df_result = pd.DataFrame(results)
 
